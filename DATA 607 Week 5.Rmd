@@ -1,0 +1,193 @@
+---
+title: "DATA 607 Week 5"
+author: "Vinicio Haro"
+date: "February 26, 2018"
+output: html_document
+---
+
+Problem Statement:
+(1) Create a .CSV file (or optionally, a MySQL database!) that includes all of the information above.
+You're encouraged to use a "wide" structure similar to how the information appears above, so
+that you can practice tidying and transformations as described below.
+
+(2) Read the information from your .CSV file into R, and use tidyr and dplyr as needed to tidy
+and transform your data.
+
+(3) Perform analysis to compare the arrival delays for the two airlines.
+
+(4) Your code should be in an R Markdown file, posted to rpubs.com, and should include narrative
+descriptions of your data cleanup work, analysis, and conclusions. 
+
+I decided to create the schema and corresponding tables in a MYSQL Database. In order to read the schema into r, need to open a connection and turn the data into an r dataframe for the other portion of this assignment. 
+
+The self sustaining script to create and populate the schema can be found here:
+
+Making a connection to MySQL
+You will need to change the host name, user name, and password associated to your own personal MYSQl instance.
+For security reason, I will only show the base code with empty parameters except for the database name.
+
+library(RMySQL)
+mydb = dbConnect(MySQL(), user='', password='', dbname='week5', host='')
+
+
+```{r, include=FALSE}
+library(RMySQL)
+mydb = dbConnect(MySQL(), user='root', password='bbuser', dbname='week5', host='localhost')
+```
+
+Check the tables in the schema 
+```{r}
+#check the tables that exist in the schema 
+dbListTables(mydb)
+```
+
+The table we want to work with is downstream. When making the schema, I used the following design:
+-Table with unique carrier ID and carrier name 
+-Wide table with only On-Time counts for each city and carrier ID
+-Wide table with only Delay counts for each city and carrier ID
+-append On time and Delay into a bridge table 
+
+We need to make a table that has all the information in one table 
+We can call upon the DBgetquery function to not only to run the query, but to turn the data into a dataframe, and clear the query cache 
+```{r}
+ws<-dbGetQuery(mydb, 'select a.carrier, b.status,  b.LA, b.Phoenix, b.SanDiego, b.SanFrancisco, b.Seattle
+           from carrier a 
+           join downstream b 
+           on (a.carrier_id=b.carrier_id)
+               order by carrier desc;')
+```
+
+Lets check our new data frame 
+```{r}
+head(ws)
+```
+
+With the data now in our working system, we can proceed to using the tools in tidyr and dplyr to transform the data and compare arrival delays for the two airlines. 
+
+```{r}
+library(tidyr)
+library(dplyr)
+```
+
+I used the following resources to help complete this assigment 
+#https://www.rstudio.com/wp-content/uploads/2015/02/data-wrangling-cheatsheet.pdf
+#http://data.library.virginia.edu/a-tidyr-tutorial/
+#https://rpubs.com/bradleyboehmke/data_wrangling
+
+The data is in a form where we can gather by key pair values. 
+This will take each column that contains a city, and combine them into one column
+```{r}
+flight_longdf <- df %>% gather(data=ws, count, LA:Seattle)
+head(flight_longdf, 24)  
+```
+
+This still is not the data set we want to work with. Some more additional work can be done in order to make status its own column 
+This will give us a data frame that shows carrier, City, ontime, delay 
+we will use the spread function to complete this task 
+```{r}
+flight_middf <- flight_longdf %>% spread(status, count)
+head(flight_middf, 24)
+status2.df<-data.frame(flight_middf)
+status2.df
+```
+
+We need to make a small chage and rename one of the columns. Aside from the column name, I now have a data frame that I can use to make comparisons regarding number of delayed flights. 
+
+```{r}
+#Lets rename the city column with a proper name 
+colnames(status2.df)[colnames(status2.df)=="."] <- "City"
+head(status2.df)
+
+```
+
+Basic base function summary 
+```{r}
+#The data is now in a format that is optimized for downstream analysis 
+#Lets see a basic summary 
+summary(status2.df)
+```
+
+We can use dplyr to refine a summary of the data. 
+Before looking at a comparison by just Carrier, I want to compare at city level granularity 
+```{r}
+status2.df %>%
+  group_by(City)%>% 
+  summarise(Mean_Ontime = mean(ON_TIME, na.rm=TRUE),
+            Mean_Delay = mean(DELAY, na.rm=TRUE))
+```
+
+We can add other dimensions of Descriptive Statistics such a Standard Deviation 
+```{r}
+#We can look at other dimensio
+status2.df %>%
+  group_by(City)%>% 
+  summarise(SD_Ontime = sd(ON_TIME),
+            SD_DELAY=sd(DELAY)) 
+```
+
+Lets put all this information together 
+```{r}
+#Now lets compare means and standard deviations grouped by city 
+status2.df %>%
+  group_by(City)%>% 
+  summarise(Mean_Ontime = mean(ON_TIME, na.rm=TRUE),
+            Mean_Delay = mean(DELAY, na.rm=TRUE), 
+            SD_Ontime = sd(ON_TIME),
+            SD_DELAY=sd(DELAY))
+```
+
+We can get a better perspective by comparing at carrier granularity 
+```{r}
+#lets repeat the analysis but grouped by carrier 
+status2.df %>%
+  group_by(carrier)%>% 
+  summarise(Mean_Ontime = mean(ON_TIME, na.rm=TRUE),
+            Mean_Delay = mean(DELAY, na.rm=TRUE), 
+            SD_Ontime = sd(ON_TIME),
+            SD_DELAY=sd(DELAY))
+```
+
+From this chart, ALASKA airline had a lower average of Delays with less standard deviation from the mean. It should be noted that AM WEST has a greater number of flights than ALASKA. 
+
+Lets conclude with some top level visualzations 
+I want to re-examine city level granularity. 
+I am making two charts,one for Delays and the other for On Time flights. The range difference between On Time and Delay is far too great to reasonably scale a combined chart.
+```{r}
+#Delays
+library(ggplot2)
+ggplot(status2.df, aes(factor(City), DELAY, fill = carrier)) + 
+  geom_bar(stat="identity", position = "dodge") + 
+  theme_minimal()+
+  labs( x="City", y="Number of Delayed Arrivals")
+```
+
+```{r}
+#on time 
+  library(ggplot2)
+  ggplot(status2.df, aes(factor(City), ON_TIME, fill = carrier)) + 
+    geom_bar(stat="identity", position = "dodge") + 
+    theme_minimal()+
+    labs( x="City", y="Number of On Time Arrivals")
+```
+
+We can produce an additional chart that only compares the delays at the carrier level. We are only interested in arrival delays anyways. 
+I will regroup my data and create a smalldata frame with the mean delays and arrivals 
+```{r}
+flightmean<-status2.df %>%
+  group_by(carrier)%>% 
+  summarise(Avg_Ontime = mean(ON_TIME, na.rm=TRUE),
+            Avg_Delay = mean(DELAY, na.rm=TRUE))
+flightmean.df<-data.frame(flightmean)
+flightmean.df
+```
+
+Plot
+```{r}
+library(ggplot2)
+  ggplot(flightmean.df, aes(factor(carrier), Avg_Delay, fill = carrier)) + 
+    geom_bar(stat="identity", position = "dodge") + 
+    theme_minimal()+
+    labs( x="City", y="Average Number of Delayed Arrivals")
+```
+
+Overall, we can conclude that AM WEST has more delayed arrivals on average than ALASKA airlines. 
