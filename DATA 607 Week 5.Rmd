@@ -21,6 +21,7 @@ descriptions of your data cleanup work, analysis, and conclusions.
 I decided to create the schema and corresponding tables in a MYSQL Database. In order to read the schema into r, need to open a connection and turn the data into an r dataframe for the other portion of this assignment. 
 
 The self sustaining script to create and populate the schema can be found here:
+https://gist.github.com/vindication09/fd719468dfc629335cb6ac4952b16127
 
 Making a connection to MySQL
 You will need to change the host name, user name, and password associated to your own personal MYSQl instance.
